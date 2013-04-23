@@ -14,6 +14,7 @@
 
 // Our OpenCL Particle Systemclass.
 #include "md.hpp"
+#include "cycle_timer.hpp"
 
 #define NUM_PARTICLES 20000
 
@@ -27,6 +28,10 @@ static struct prog_state {
   int mouse_old_x, mouse_old_y;
   int mouse_buttons;
   float rotate_x, rotate_y;
+  double t0;
+  double tlast;
+  int frames;
+  int framerate;
 } prog_state;
 
 // Main app helper functions.
@@ -52,6 +57,10 @@ int main(int argc, char** argv) {
   prog_state.mouse_buttons = 0;
   prog_state.rotate_x = 0.f;
   prog_state.rotate_y = 0.f;
+  prog_state.t0 = CycleTimer::currentSeconds();
+  prog_state.tlast = 0.f;
+  prog_state.frames = 0;
+  prog_state.framerate = 0;
   // Setup our GLUT window and OpenGL related things.
   // Glut callback functions are setup here too.
   init_gl(argc, argv);
@@ -110,6 +119,15 @@ void appRender() {
   // This updates the particle system by calling the kernel.
   prog_state.md->runKernel();
 
+  prog_state.frames++;
+  double tnow = CycleTimer::currentSeconds() - prog_state.t0;
+  if (tnow > prog_state.tlast + 1.f) {
+    prog_state.framerate = prog_state.frames;
+    //std::cout << "Frames: " << prog_state.framerate << std::endl;
+    prog_state.tlast = tnow;
+    prog_state.frames = 0;
+  }
+
   // Render the particles from VBOs.
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -138,6 +156,14 @@ void appRender() {
   glDisableClientState(GL_COLOR_ARRAY);
   glDisableClientState(GL_VERTEX_ARRAY);
 
+  // Display framerate.
+  char buf[10];
+  sprintf(buf, "%d", prog_state.framerate);
+  std::string msg = std::string(buf);
+  glRasterPos2f(-1.3f, 0.9f);
+  glColor4f(0.0f, 0.0f, 1.0f, 1.0f);
+  glutBitmapString(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)msg.c_str());
+
   glutSwapBuffers();
 }
 
@@ -145,7 +171,8 @@ void init_gl(int argc, char** argv) {
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
   glutInitWindowSize(prog_state.window_width, prog_state.window_height);
-  glutInitWindowPosition (glutGet(GLUT_SCREEN_WIDTH)/2 - prog_state.window_width/2,
+  glutInitWindowPosition (glutGet(GLUT_SCREEN_WIDTH)/2 -
+                          prog_state.window_width/2,
                           glutGet(GLUT_SCREEN_HEIGHT)/2 -
                           prog_state.window_height/2);
 
