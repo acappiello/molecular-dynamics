@@ -21,7 +21,7 @@ INCLUDES   := $(addprefix -I, $(INCL))
 LIBS       := GL glut OpenCL GLU GLEW
 LDFLAGS=
 
-LDLIBS  := $(addprefix -l, $(LIBS))
+LDLIBS     := $(addprefix -l, $(LIBS))
 
 CC_FILES   := $(addsuffix .cpp, $(FILES))
 OB         := $(addsuffix .o, $(FILES))
