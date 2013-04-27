@@ -8,8 +8,9 @@
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glut.h>
 #include <GL/freeglut_ext.h>
-//#include <GL/glext.h>
-#include "glext.h"
+#include <GL/glext.h>
+
+#include <CL/cl.hpp>
 
 
 #include "md.hpp"
@@ -20,9 +21,9 @@ GLuint createVBO(const void* data, int dataSize, GLenum target, GLenum usage) {
   // 0 is reserved, glGenBuffersARB() will return non-zero id if success.
   GLuint id = 0;
 
-  glGenBuffersARB(1, &id);                         // Create a vbo.
-  glBindBufferARB(target, id);                     // Activate vbo id to use.
-  glBufferDataARB(target, dataSize, data, usage);  // Upload data to video card.
+  glGenBuffers(1, &id);                         // Create a vbo.
+  glBindBuffer(target, id);                     // Activate vbo id to use.
+  glBufferData(target, dataSize, data, usage);  // Upload data to video card.
 
   // Check data size in VBO is same as input array, if not return 0 and delete
   // VBO.
@@ -38,7 +39,6 @@ GLuint createVBO(const void* data, int dataSize, GLenum target, GLenum usage) {
   glBindBuffer(target, 0);
   return id;      // Return VBO id.
 }
-
 
 
 // Helper function to get error string.

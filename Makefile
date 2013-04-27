@@ -19,11 +19,11 @@ INCL       := ./opencl11
 INCLUDES   := $(addprefix -I, $(INCL))
 
 LIBS       := GL glut OpenCL GLU GLEW
-LDFLAGS=
+LDFLAGS    :=
 
 LDLIBS     := $(addprefix -l, $(LIBS))
 
-CC_FILES   := $(addsuffix .cpp, $(FILES))
+CXX_FILES  := $(addsuffix .cpp, $(FILES))
 OB         := $(addsuffix .o, $(FILES))
 OBJS       := $(addprefix $(OBJDIR)/, $(OB))
 

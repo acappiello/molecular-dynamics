@@ -29,12 +29,12 @@ class MD {
 public:
   // These are arrays we will use in this tutorial.
   std::vector<cl::Memory> cl_vbos;  // 0: position vbo, 1: color vbo.
-  cl::Buffer cl_velocities;  // Particle velocities.
   cl::Buffer cl_pos_gen;  // want to have the start points for reseting particles
-  cl::Buffer cl_vel_gen;  // want to have the start velocities for reseting particles
+  cl::Buffer cl_forces;
+  cl::Buffer cl_vel;
 
-  GLuint p_vbo;          // Position vbo.
-  GLuint c_vbo;          // Colors vbo.
+  GLuint pos_vbo;     // Position vbo.
+  GLuint col_vbo;     // Colors vbo.
   int num;            // The number of particles.
   size_t array_size;  // The size of our arrays num * sizeof(Vec4).
 
@@ -47,8 +47,8 @@ public:
   std::string loadFile(const char *filename);
   // Load an OpenCL program from a string.
   void loadProgram(std::string kernel_source);
-  void loadData(std::vector<Vec4> pos, std::vector<Vec4> vel,
-                std::vector<Vec4> col);
+  void loadData(std::vector<cl_float3> pos, std::vector<cl_float3> force,
+                std::vector<cl_float3> vel, std::vector<cl_float4> col);
   // These are implemented in part1.cpp (in the future we will make these more
   // general).
   void popCorn();
@@ -64,6 +64,8 @@ private:
   cl::CommandQueue queue;
   cl::Program program;
   cl::Kernel kernel;
+  cl::Kernel forceKernel;
+  cl::Kernel updateKernel;
 
   // Debugging variables.
   cl_int err;

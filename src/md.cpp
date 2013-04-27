@@ -6,6 +6,7 @@
 
 #include "md.hpp"
 #include "util.hpp"
+#include "types.hpp"
 
 // Needed for context sharing functions.
 #include <GL/glx.h>
@@ -72,6 +73,7 @@ void MD::loadProgram(std::string kernel_source) {
   int pl;
   //size_t program_length;
   printf("load the program\n");
+  bool failed = false;
 
   pl = kernel_source.size();
   printf("kernel size: %d\n", pl);
@@ -93,6 +95,7 @@ void MD::loadProgram(std::string kernel_source) {
   catch (cl::Error er) {
     printf("program.build: %s\n", oclErrorString(er.err()));
     //if(err != CL_SUCCESS){
+    failed = true;
   }
   printf("done building program\n");
   std::cout << "Build Status: "
@@ -104,44 +107,45 @@ void MD::loadProgram(std::string kernel_source) {
   std::cout << "Build Log:\t "
             << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[0])
             << std::endl;
+
+  if (failed)
+    exit(EXIT_FAILURE);
 }
 
-void MD::loadData(std::vector<Vec4> pos, std::vector<Vec4> vel,
-                  std::vector<Vec4> col) {
+void MD::loadData(std::vector<cl_float3> pos, std::vector<cl_float3> force,
+                  std::vector<cl_float3> vel, std::vector<cl_float4> col) {
   // Store the number of particles and the size in bytes of our arrays.
   num = pos.size();
-  array_size = num * sizeof(Vec4);
+  array_size = num * sizeof(cl_float4);
   // Create VBOs (defined in util.cpp).
-  p_vbo = createVBO(&pos[0], array_size, GL_ARRAY_BUFFER, GL_DYNAMIC_COPY_ARB);
-  c_vbo = createVBO(&col[0], array_size, GL_ARRAY_BUFFER, GL_DYNAMIC_COPY_ARB);
+  pos_vbo = createVBO(&pos[0], array_size, GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW);
+  col_vbo = createVBO(&col[0], array_size, GL_ARRAY_BUFFER, GL_DYNAMIC_DRAW);
 
   // Make sure OpenGL is finished before we proceed.
   glFinish();
   printf("gl interop!\n");
   // Create OpenCL buffer from GL VBO.
-  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, p_vbo, &err));
+  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, pos_vbo, &err));
   printf("cl::BufferGL: %s\n", oclErrorString(err));
   //printf("v_vbo: %s\n", oclErrorString(err));
-  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, c_vbo, &err));
+  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, col_vbo, &err));
   printf("cl::BufferGL: %s\n", oclErrorString(err));
   // We don't need to push any data here because it's already in the VBO.
 
-
   // Create the OpenCL only arrays.
-  cl_velocities = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL,
-                             &err);
-  cl_pos_gen = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
-  cl_vel_gen = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
+  cl_pos_gen = cl::Buffer(context, CL_MEM_WRITE_ONLY, array_size, NULL, &err);
+  cl_forces = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
+  cl_vel = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
 
   printf("Pushing data to the GPU\n");
   // Push our CPU arrays to the GPU.
   // Data is tightly packed in std::vector starting with the adress of the first
   // element.
-  err = queue.enqueueWriteBuffer(cl_velocities, CL_TRUE, 0, array_size, &vel[0],
+  err = queue.enqueueWriteBuffer(cl_forces, CL_TRUE, 0, array_size, &force[0],
+                                 NULL, &event);
+  err = queue.enqueueWriteBuffer(cl_vel, CL_TRUE, 0, array_size, &vel[0],
                                  NULL, &event);
   err = queue.enqueueWriteBuffer(cl_pos_gen, CL_TRUE, 0, array_size, &pos[0],
-                                 NULL, &event);
-  err = queue.enqueueWriteBuffer(cl_vel_gen, CL_TRUE, 0, array_size, &vel[0],
                                  NULL, &event);
   queue.finish();
 }
@@ -150,7 +154,8 @@ void MD::popCorn() {
   printf("in popCorn\n");
   // Initialize our kernel from the program.
   try {
-    kernel = cl::Kernel(program, "update", &err);
+    forceKernel = cl::Kernel(program, "force", &err);
+    updateKernel = cl::Kernel(program, "update", &err);
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
@@ -158,11 +163,14 @@ void MD::popCorn() {
   printf("here!\n");
   // Set the arguements of our kernel.
   try {
-    err = kernel.setArg(0, cl_vbos[0]); // Position vbo.
-    err = kernel.setArg(1, cl_vbos[1]); // Color vbo.
-    err = kernel.setArg(2, cl_velocities);
-    err = kernel.setArg(3, cl_pos_gen);
-    err = kernel.setArg(4, cl_vel_gen);
+    err = forceKernel.setArg(0, cl_vbos[0]); // Position vbo.
+    err = forceKernel.setArg(1, cl_vbos[1]); // Color vbo.
+    err = forceKernel.setArg(2, cl_forces);
+    err = forceKernel.setArg(3, cl_pos_gen);
+    err = updateKernel.setArg(0, cl_vbos[0]); // Position vbo.
+    err = updateKernel.setArg(1, cl_vbos[1]); // Color vbo.
+    err = updateKernel.setArg(2, cl_forces);
+    err = updateKernel.setArg(3, cl_vel);
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
@@ -185,15 +193,26 @@ void MD::runKernel() {
   queue.finish();
 
   float dt = .01f;
-  kernel.setArg(5, dt); //pass in the timestep
+  forceKernel.setArg(4, num);  //pass in the timestep
+  updateKernel.setArg(4, dt);  //pass in the timestep
   // Execute the kernel.
-  err = queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(num),
-                                   cl::NullRange, NULL, &event);
+  /*err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange, cl::NDRange(num),
+    cl::NullRange, NULL, &event);*/
+  err = queue.enqueueNDRangeKernel(updateKernel, cl::NullRange,
+                                   cl::NDRange(num), cl::NullRange, NULL,
+                                   &event);
   //printf("clEnqueueNDRangeKernel: %s\n", oclErrorString(err));
+
   queue.finish();
 
   // Release the VBOs so OpenGL can play with them.
   err = queue.enqueueReleaseGLObjects(&cl_vbos, NULL, &event);
   //printf("release gl: %s\n", oclErrorString(err));
+  cl_float3 A[num];
+  err = queue.enqueueReadBuffer(cl_vbos[0], CL_TRUE, 0, array_size, &A[0],
+                                 NULL, &event);
   queue.finish();
+  for (int i = 0; i < 100; i++)
+    std::cout << A[i] << " ";
+  std::cout << std::endl;
 }

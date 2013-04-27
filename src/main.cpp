@@ -15,6 +15,7 @@
 // Our OpenCL Particle Systemclass.
 #include "md.hpp"
 #include "cycle_timer.hpp"
+#include "util.hpp"
 
 #define NUM_PARTICLES 20000
 
@@ -75,34 +76,35 @@ int main(int argc, char** argv) {
 
   // Initialize our particle system with positions, velocities and color.
   int num = NUM_PARTICLES;
-  std::vector<Vec4> pos(num);
-  std::vector<Vec4> vel(num);
-  std::vector<Vec4> color(num);
+  std::vector<cl_float3> pos(num);
+  std::vector<cl_float3> force(num);
+  std::vector<cl_float3> vel(num);
+  std::vector<cl_float4> color(num);
 
   // Fill our vectors with initial data.
   for(int i = 0; i < num; i++) {
     // Distribute the particles in a random circle around z axis.
-    float rad = rand_float(.2, .5);
-    float x = rad*sin(2*3.14 * i/num);
-    float z = 0.0f;  // -.1 + .2f * i/num;
-    float y = rad*cos(2*3.14 * i/num);
-    pos[i] = Vec4(x, y, z, 1.0f);
+    //float rad = rand_float(.2, .5);
+    float min = -0.5;
+    float max = 0.5;
+    float x = rand_float(min, max);
+    float z = rand_float(min, max);
+    float y = rand_float(min, max);
+    pos[i] = f3(x, y, z);
 
     // Give some initial velocity.
     //float xr = rand_float(-.1, .1);
     //float yr = rand_float(1.f, 3.f);
     // The life is the lifetime of the particle: 1 = alive 0 = dead.
     // As you will see in part2.cl we reset the particle when it dies.
-    float life_r = rand_float(0.f, 1.f);
-    vel[i] = Vec4(0.f, 0.f, 3.0f, life_r);
+    force[i] = f3(0.f, 0.f, 0.f);
+    vel[i] = f3(0.f, 0.f, 0.f);
 
     // Just make them red and full alpha.
-    color[i] = Vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    color[i] = f4(1.0f, 0.0f, 0.0f, 1.0f);
   }
-  std::cout << "foo: " << &pos[0] << " bar: " << &pos[num] << std::endl;
-  std::cout << "num: " << num << " sizeof(Vec4): " << sizeof(Vec4) << std::endl;
 
-  prog_state.md->loadData(pos, vel, color);
+  prog_state.md->loadData(pos, force, vel, color);
 
   prog_state.md->popCorn();
 
@@ -135,11 +137,11 @@ void appRender() {
   glPointSize(5.);
 
   //printf("color buffer\n");
-  glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->c_vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->col_vbo);
   glColorPointer(4, GL_FLOAT, 0, 0);
 
   //printf("vertex buffer\n");
-  glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->p_vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->pos_vbo);
   glVertexPointer(4, GL_FLOAT, 0, 0);
 
   //printf("enable client state\n");
@@ -176,14 +178,12 @@ void init_gl(int argc, char** argv) {
                           glutGet(GLUT_SCREEN_HEIGHT)/2 -
                           prog_state.window_height/2);
 
-
   std::stringstream ss;
-  ss << "Adventures in OpenCL: Part 2, " << NUM_PARTICLES << " particles" <<
-    std::ends;
+  ss << "md, " << NUM_PARTICLES << " particles" << std::ends;
   prog_state.glutWindowHandle = glutCreateWindow(ss.str().c_str());
 
   glutDisplayFunc(appRender);      // Main rendering function.
-  glutTimerFunc(30, timerCB, 30);  // Determin a minimum time between frames.
+  glutTimerFunc(30, timerCB, 30);  // Determine a minimum time between frames.
   glutKeyboardFunc(appKeyboard);
   glutMouseFunc(appMouse);
   glutMotionFunc(appMotion);
