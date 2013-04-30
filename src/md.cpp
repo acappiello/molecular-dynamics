@@ -112,8 +112,8 @@ void MD::loadProgram(std::string kernel_source) {
     exit(EXIT_FAILURE);
 }
 
-void MD::loadData(std::vector<cl_float3> pos, std::vector<cl_float3> force,
-                  std::vector<cl_float3> vel, std::vector<cl_float4> col) {
+void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
+                  std::vector<cl_float4> vel, std::vector<cl_float4> col) {
   // Store the number of particles and the size in bytes of our arrays.
   num = pos.size();
   array_size = num * sizeof(cl_float4);
@@ -196,8 +196,8 @@ void MD::runKernel() {
   forceKernel.setArg(4, num);  //pass in the timestep
   updateKernel.setArg(4, dt);  //pass in the timestep
   // Execute the kernel.
-  /*err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange, cl::NDRange(num),
-    cl::NullRange, NULL, &event);*/
+  err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange, cl::NDRange(num),
+    cl::NullRange, NULL, &event);
   err = queue.enqueueNDRangeKernel(updateKernel, cl::NullRange,
                                    cl::NDRange(num), cl::NullRange, NULL,
                                    &event);
@@ -208,11 +208,11 @@ void MD::runKernel() {
   // Release the VBOs so OpenGL can play with them.
   err = queue.enqueueReleaseGLObjects(&cl_vbos, NULL, &event);
   //printf("release gl: %s\n", oclErrorString(err));
-  cl_float3 A[num];
+  /*cl_float3 A[num];
   err = queue.enqueueReadBuffer(cl_vbos[0], CL_TRUE, 0, array_size, &A[0],
-                                 NULL, &event);
+  NULL, &event);*/
   queue.finish();
-  for (int i = 0; i < 100; i++)
+  /*for (int i = 0; i < 100; i++)
     std::cout << A[i] << " ";
-  std::cout << std::endl;
+    std::cout << std::endl;*/
 }

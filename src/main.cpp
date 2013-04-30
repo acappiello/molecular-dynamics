@@ -17,7 +17,7 @@
 #include "cycle_timer.hpp"
 #include "util.hpp"
 
-#define NUM_PARTICLES 20000
+#define NUM_PARTICLES 1000
 
 static struct prog_state {
   MD *md;
@@ -76,29 +76,29 @@ int main(int argc, char** argv) {
 
   // Initialize our particle system with positions, velocities and color.
   int num = NUM_PARTICLES;
-  std::vector<cl_float3> pos(num);
-  std::vector<cl_float3> force(num);
-  std::vector<cl_float3> vel(num);
+  std::vector<cl_float4> pos(num);
+  std::vector<cl_float4> force(num);
+  std::vector<cl_float4> vel(num);
   std::vector<cl_float4> color(num);
 
   // Fill our vectors with initial data.
   for(int i = 0; i < num; i++) {
     // Distribute the particles in a random circle around z axis.
     //float rad = rand_float(.2, .5);
-    float min = -0.5;
-    float max = 0.5;
+    float max = 0.5f;
+    float min = -1.f * max;
     float x = rand_float(min, max);
     float z = rand_float(min, max);
     float y = rand_float(min, max);
-    pos[i] = f3(x, y, z);
+    pos[i] = f4(x, y, z, 1.f);
 
     // Give some initial velocity.
     //float xr = rand_float(-.1, .1);
     //float yr = rand_float(1.f, 3.f);
     // The life is the lifetime of the particle: 1 = alive 0 = dead.
     // As you will see in part2.cl we reset the particle when it dies.
-    force[i] = f3(0.f, 0.f, 0.f);
-    vel[i] = f3(0.f, 0.f, 0.f);
+    force[i] = f4(0.f, 0.f, 0.f, 0.f);
+    vel[i] = f4(0.f, 0.f, 0.f, 0.f);
 
     // Just make them red and full alpha.
     color[i] = f4(1.0f, 0.0f, 0.0f, 1.0f);
@@ -207,6 +207,7 @@ void init_gl(int argc, char** argv) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
+  // glFrustum(-.5, .5, -.5, .5, 0, 40);
   glTranslatef(0.0, 0.0, prog_state.translate_z);
 }
 

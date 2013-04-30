@@ -47,8 +47,8 @@ public:
   std::string loadFile(const char *filename);
   // Load an OpenCL program from a string.
   void loadProgram(std::string kernel_source);
-  void loadData(std::vector<cl_float3> pos, std::vector<cl_float3> force,
-                std::vector<cl_float3> vel, std::vector<cl_float4> col);
+  void loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
+                std::vector<cl_float4> vel, std::vector<cl_float4> col);
   // These are implemented in part1.cpp (in the future we will make these more
   // general).
   void popCorn();
