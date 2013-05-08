@@ -51,7 +51,7 @@ public:
                 std::vector<cl_float4> vel, std::vector<cl_float4> col);
   // These are implemented in part1.cpp (in the future we will make these more
   // general).
-  void popCorn();
+  void clInit(float bound);
   // Execute the kernel.
   void runKernel();
 

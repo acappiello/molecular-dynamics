@@ -26,7 +26,7 @@ __kernel void force(__global float4* pos, __global float4* color,
   // copy to a local memory array to speed up memory access (this will be the
   // subject of a later tutorial)
   float4 p = pos[idx] * 100;
-  __local float3 lj;
+  __local float4 lj;
   float4 f;
   f.x = 0.f; f.y = 0.f; f.z = 0.f; f.w = 0.f;
 
@@ -44,7 +44,7 @@ __kernel void force(__global float4* pos, __global float4* color,
 //std::string kernel_source = STRINGIFY(
 __kernel void update(__global float4* pos, __global float4* color,
                      __global float4* force, __global float4* vel,
-                     float dt) {
+                     float bound, float dt) {
   // Get our index in the array.
   size_t i = get_global_id(0);
   // Copy position and velocity for this iteration to a local variable.
@@ -59,13 +59,10 @@ __kernel void update(__global float4* pos, __global float4* color,
   p += v * dt;
 
   vel[i] = v;
-  float bound = 2.f;
-  float4 min = (float4)(-bound, -bound, -bound, -bound);
-  float4 max = (float4)(bound, bound, bound, bound);
-  p = clamp(p / 100, min, max);
+  p = clamp(p / 100, -bound, bound);
   pos[i] = p;
 
-  float elasticity = 0.1;
+  float elasticity = 0.5;
   if (p.x == bound || p.x == -bound)
     v.x = -elasticity * v.x;
   if (p.y == bound || p.y == -bound)
@@ -74,5 +71,7 @@ __kernel void update(__global float4* pos, __global float4* color,
     v.z = -elasticity * v.z;
 
   vel[i] = v;
+
+  color[i] = clamp((p + bound) / (2 * bound), 0.1f, 1.f);
 }
 //);

@@ -18,7 +18,7 @@
 
 
 GLuint createVBO(const void* data, int dataSize, GLenum target, GLenum usage) {
-  // 0 is reserved, glGenBuffersARB() will return non-zero id if success.
+  // 0 is reserved, glGenBuffers() will return non-zero id if success.
   GLuint id = 0;
 
   glGenBuffers(1, &id);                         // Create a vbo.

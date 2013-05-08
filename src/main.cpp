@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -17,7 +18,7 @@
 #include "cycle_timer.hpp"
 #include "util.hpp"
 
-#define NUM_PARTICLES 1000
+#define NUM_PARTICLES 10000
 
 static struct prog_state {
   MD *md;
@@ -33,6 +34,8 @@ static struct prog_state {
   double tlast;
   int frames;
   int framerate;
+  size_t nparticles;
+  float bbox;
 } prog_state;
 
 // Main app helper functions.
@@ -50,7 +53,7 @@ float rand_float(float mn, float mx) {
   return mn + (mx-mn)*r;
 }
 
-int main(int argc, char** argv) {
+void set_default_state () {
   prog_state.window_width = 800;
   prog_state.window_height = 600;
   prog_state.glutWindowHandle = 0;
@@ -62,6 +65,55 @@ int main(int argc, char** argv) {
   prog_state.tlast = 0.f;
   prog_state.frames = 0;
   prog_state.framerate = 0;
+  prog_state.nparticles = NUM_PARTICLES;
+  prog_state.bbox = 0.5f;
+}
+
+void usage(const char* progname) {
+    printf("Usage: %s [options]\n", progname);
+    printf("Program Options:\n");
+    printf("  -w  --width <INT>        Window Width\n");
+    printf("  -h  --height <INT>       Window Height\n");
+    printf("  -n  --nparticles <INT>   Number of particles\n");
+    printf("  -b  --bbox <FLOAT>       Size of bounding box\n");
+    printf("  -?  --help               This message\n");
+}
+
+int main(int argc, char** argv) {
+  set_default_state();
+
+  int opt;
+  static struct option long_options[] = {
+    {"help",     0, 0,  '?'},
+    {"width",    0, 0,  'w'},
+    {"height",   0, 0,  'h'},
+    {"nparticles",     0, 0,  'n'},
+    {"bbox",      0, 0,  'b'},
+    {0 ,0, 0, 0}
+  };
+
+    while ((opt = getopt_long(argc, argv, "w:h:n:b:?", long_options, NULL))
+           != EOF) {
+      switch (opt) {
+      case 'w':
+        prog_state.window_width = atoi(optarg);
+        break;
+      case 'h':
+        prog_state.window_height = atoi(optarg);
+        break;
+      case 'n':
+        prog_state.nparticles = atoi(optarg);
+        break;
+      case 'b':
+        prog_state.bbox = atof(optarg);
+        break;
+      case '?':
+      default:
+        usage(argv[0]);
+        return 1;
+      }
+    }
+
   // Setup our GLUT window and OpenGL related things.
   // Glut callback functions are setup here too.
   init_gl(argc, argv);
@@ -75,7 +127,7 @@ int main(int argc, char** argv) {
   prog_state.md->loadProgram(kernel_source);
 
   // Initialize our particle system with positions, velocities and color.
-  int num = NUM_PARTICLES;
+  int num = prog_state.nparticles;
   std::vector<cl_float4> pos(num);
   std::vector<cl_float4> force(num);
   std::vector<cl_float4> vel(num);
@@ -85,7 +137,7 @@ int main(int argc, char** argv) {
   for(int i = 0; i < num; i++) {
     // Distribute the particles in a random circle around z axis.
     //float rad = rand_float(.2, .5);
-    float max = 0.5f;
+    float max = prog_state.bbox;
     float min = -1.f * max;
     float x = rand_float(min, max);
     float z = rand_float(min, max);
@@ -106,7 +158,7 @@ int main(int argc, char** argv) {
 
   prog_state.md->loadData(pos, force, vel, color);
 
-  prog_state.md->popCorn();
+  prog_state.md->clInit(prog_state.bbox);
 
   // This starts the GLUT program, from here on out everything we want
   // to do needs to be done in glut callback functions.

@@ -150,8 +150,8 @@ void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
   queue.finish();
 }
 
-void MD::popCorn() {
-  printf("in popCorn\n");
+void MD::clInit(float bound) {
+  printf("Initializing CL Kernels\n");
   // Initialize our kernel from the program.
   try {
     forceKernel = cl::Kernel(program, "force", &err);
@@ -160,7 +160,6 @@ void MD::popCorn() {
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
   }
-  printf("here!\n");
   // Set the arguements of our kernel.
   try {
     err = forceKernel.setArg(0, cl_vbos[0]); // Position vbo.
@@ -171,14 +170,14 @@ void MD::popCorn() {
     err = updateKernel.setArg(1, cl_vbos[1]); // Color vbo.
     err = updateKernel.setArg(2, cl_forces);
     err = updateKernel.setArg(3, cl_vel);
+    err = updateKernel.setArg(4, bound);
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
   }
-  printf("there!\n");
   // Wait for the command queue to finish these commands before proceeding.
   queue.finish();
-  printf("Done popCorn\n");
+  printf("Done initializing\n");
 }
 
 void MD::runKernel() {
@@ -194,7 +193,7 @@ void MD::runKernel() {
 
   float dt = .01f;
   forceKernel.setArg(4, num);  //pass in the timestep
-  updateKernel.setArg(4, dt);  //pass in the timestep
+  updateKernel.setArg(5, dt);  //pass in the timestep
   // Execute the kernel.
   err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange, cl::NDRange(num),
     cl::NullRange, NULL, &event);
