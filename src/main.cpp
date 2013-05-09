@@ -55,9 +55,8 @@ float rand_float(float mn, float mx) {
 
 void set_default_state () {
   prog_state.window_width = 800;
-  prog_state.window_height = 600;
+  prog_state.window_height = 800;
   prog_state.glutWindowHandle = 0;
-  prog_state.translate_z = -1.f;
   prog_state.mouse_buttons = 0;
   prog_state.rotate_x = 0.f;
   prog_state.rotate_y = 0.f;
@@ -66,17 +65,23 @@ void set_default_state () {
   prog_state.frames = 0;
   prog_state.framerate = 0;
   prog_state.nparticles = NUM_PARTICLES;
-  prog_state.bbox = 0.5f;
+  prog_state.bbox = 50.f;
+  prog_state.translate_z = -2.1f * prog_state.bbox;
 }
 
 void usage(const char* progname) {
-    printf("Usage: %s [options]\n", progname);
-    printf("Program Options:\n");
-    printf("  -w  --width <INT>        Window Width\n");
-    printf("  -h  --height <INT>       Window Height\n");
-    printf("  -n  --nparticles <INT>   Number of particles\n");
-    printf("  -b  --bbox <FLOAT>       Size of bounding box\n");
-    printf("  -?  --help               This message\n");
+  set_default_state();
+  printf("Usage: %s [options]\n", progname);
+  printf("Program Options:\n");
+  printf("  -w  --width <INT>       Window Width               default=%d\n",
+         prog_state.window_width);
+  printf("  -h  --height <INT>      Window Height              default=%d\n",
+         prog_state.window_height);
+  printf("  -n  --nparticles <INT>  Number of particles        default=%zu\n",
+         prog_state.nparticles);
+  printf("  -b  --bbox <FLOAT>      Size of bounding box (+-)  default=%f\n",
+         prog_state.bbox);
+  printf("  -?  --help              This message\n");
 }
 
 int main(int argc, char** argv) {
@@ -106,6 +111,7 @@ int main(int argc, char** argv) {
         break;
       case 'b':
         prog_state.bbox = atof(optarg);
+        prog_state.translate_z = -2.2f * prog_state.bbox;
         break;
       case '?':
       default:
@@ -214,7 +220,8 @@ void appRender() {
   char buf[10];
   sprintf(buf, "%d", prog_state.framerate);
   std::string msg = std::string(buf);
-  glRasterPos2f(-1.3f, 0.9f);
+  //glRasterPos2f(-1.3f, 0.9f);
+  glRasterPos3f(-prog_state.bbox, prog_state.bbox, prog_state.bbox);
   glColor4f(0.0f, 0.0f, 1.0f, 1.0f);
   glutBitmapString(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)msg.c_str());
 
@@ -231,7 +238,7 @@ void init_gl(int argc, char** argv) {
                           prog_state.window_height/2);
 
   std::stringstream ss;
-  ss << "md, " << NUM_PARTICLES << " particles" << std::ends;
+  ss << "md, " << prog_state.nparticles << " particles" << std::ends;
   prog_state.glutWindowHandle = glutCreateWindow(ss.str().c_str());
 
   glutDisplayFunc(appRender);      // Main rendering function.
