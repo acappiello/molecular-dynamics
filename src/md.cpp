@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <iterator>
 
 #include "md.hpp"
@@ -68,10 +69,10 @@ std::string MD::loadFile(const char *filename) {
   return prog;
 }
 
-void MD::loadProgram(std::string kernel_source) {
+void MD::loadProgram(std::string kernel_source, int group_size_val) {
   // Program Setup.
   int pl;
-  //size_t program_length;
+  group_size = group_size_val;
   printf("load the program\n");
   bool failed = false;
 
@@ -90,7 +91,9 @@ void MD::loadProgram(std::string kernel_source) {
   printf("build program\n");
   try {
     //err = program.build(devices, "-cl-nv-verbose -cl-nv-maxrregcount=100");
-    err = program.build(devices);
+    std::stringstream build_options;
+    build_options << "-D SIZE=" << group_size << std::ends;
+    err = program.build(devices, build_options.str().c_str());
   }
   catch (cl::Error er) {
     printf("program.build: %s\n", oclErrorString(er.err()));
@@ -150,24 +153,27 @@ void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
   queue.finish();
 }
 
-void MD::clInit(float bound) {
+void MD::clInit(float bound, char *force_kernel_name) {
   printf("Initializing CL Kernels\n");
   // Initialize our kernel from the program.
   try {
+    //forceKernel = cl::Kernel(program, force_kernel_name, &err);
     forceKernel = cl::Kernel(program, "force", &err);
     updateKernel = cl::Kernel(program, "update", &err);
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
+    exit(EXIT_FAILURE);
   }
   // Set the arguements of our kernel.
   try {
-    err = forceKernel.setArg(0, cl_vbos[0]); // Position vbo.
-    err = forceKernel.setArg(1, cl_vbos[1]); // Color vbo.
+    err = forceKernel.setArg(0, cl_vbos[0]);  // Position vbo.
+    err = forceKernel.setArg(1, cl_vbos[1]);  // Color vbo.
     err = forceKernel.setArg(2, cl_forces);
     err = forceKernel.setArg(3, cl_pos_gen);
-    err = updateKernel.setArg(0, cl_vbos[0]); // Position vbo.
-    err = updateKernel.setArg(1, cl_vbos[1]); // Color vbo.
+    err = forceKernel.setArg(4, num);          // Pass in the size.
+    err = updateKernel.setArg(0, cl_vbos[0]);  // Position vbo.
+    err = updateKernel.setArg(1, cl_vbos[1]);  // Color vbo.
     err = updateKernel.setArg(2, cl_forces);
     err = updateKernel.setArg(3, cl_vel);
     err = updateKernel.setArg(4, bound);
@@ -191,27 +197,30 @@ void MD::runKernel() {
   //printf("acquire: %s\n", oclErrorString(err));
   queue.finish();
 
-  float dt = .01f;
-  forceKernel.setArg(4, num);  //pass in the timestep
-  updateKernel.setArg(5, dt);  //pass in the timestep
+  float dt = .001f;
+  updateKernel.setArg(5, dt);  // Pass in the timestep.
   // Execute the kernel.
-  err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange, cl::NDRange(num),
-    cl::NullRange, NULL, &event);
-  err = queue.enqueueNDRangeKernel(updateKernel, cl::NullRange,
-                                   cl::NDRange(num), cl::NullRange, NULL,
-                                   &event);
-  //printf("clEnqueueNDRangeKernel: %s\n", oclErrorString(err));
-
-  queue.finish();
+  try {
+    err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange,
+                                     cl::NDRange(num),
+                                     cl::NDRange(group_size), NULL, &event);
+    //err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange,
+    //                                 cl::NDRange(num),
+    //                                   cl::NullRange, NULL, &event);
+    err = queue.enqueueNDRangeKernel(updateKernel, cl::NullRange,
+                                     cl::NDRange(num), cl::NullRange, NULL,
+                                     &event);
+    err = queue.finish();
+  }
+  catch (cl::Error er) {
+    printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
+    if (er.err() == -54)
+      std::cout << "The group size must evenly divide the number of particles."
+                << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
   // Release the VBOs so OpenGL can play with them.
   err = queue.enqueueReleaseGLObjects(&cl_vbos, NULL, &event);
-  //printf("release gl: %s\n", oclErrorString(err));
-  /*cl_float3 A[num];
-  err = queue.enqueueReadBuffer(cl_vbos[0], CL_TRUE, 0, array_size, &A[0],
-  NULL, &event);*/
   queue.finish();
-  /*for (int i = 0; i < 100; i++)
-    std::cout << A[i] << " ";
-    std::cout << std::endl;*/
 }

@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iomanip>
 #include <math.h>
+#include <time.h>
 
 
 // OpenGL stuff.
@@ -13,14 +14,15 @@
 #include <GL/freeglut_ext.h>
 #include <GL/glext.h>
 
-// Our OpenCL Particle Systemclass.
+
+// Other local includes.
 #include "md.hpp"
 #include "cycle_timer.hpp"
 #include "util.hpp"
 
-#define NUM_PARTICLES 10000
 
 static struct prog_state {
+  // Class instance.
   MD *md;
   // GL related variables.
   int window_width;
@@ -30,12 +32,16 @@ static struct prog_state {
   int mouse_old_x, mouse_old_y;
   int mouse_buttons;
   float rotate_x, rotate_y;
+  // Internal variables and parameters.
   double t0;
   double tlast;
   int frames;
   int framerate;
   size_t nparticles;
   float bbox;
+  int group_size;
+  float dt;
+  char *force_kernel_name;
 } prog_state;
 
 // Main app helper functions.
@@ -64,28 +70,38 @@ void set_default_state () {
   prog_state.tlast = 0.f;
   prog_state.frames = 0;
   prog_state.framerate = 0;
-  prog_state.nparticles = NUM_PARTICLES;
+  prog_state.nparticles = 1024;
   prog_state.bbox = 50.f;
   prog_state.translate_z = -2.1f * prog_state.bbox;
+  prog_state.group_size = 32;
+  prog_state.dt = 0.001f;
+  prog_state.force_kernel_name = "force_naive";
 }
 
 void usage(const char* progname) {
   set_default_state();
   printf("Usage: %s [options]\n", progname);
   printf("Program Options:\n");
-  printf("  -w  --width <INT>       Window Width               default=%d\n",
+  printf("  -w  --width <INT>         Window Width               default=%d\n",
          prog_state.window_width);
-  printf("  -h  --height <INT>      Window Height              default=%d\n",
+  printf("  -h  --height <INT>        Window Height              default=%d\n",
          prog_state.window_height);
-  printf("  -n  --nparticles <INT>  Number of particles        default=%zu\n",
+  printf("  -n  --nparticles <INT>    Number of particles        default=%zu\n",
          prog_state.nparticles);
-  printf("  -b  --bbox <FLOAT>      Size of bounding box (+-)  default=%f\n",
+  printf("  -b  --bbox <FLOAT>        Size of bounding box (+-)  default=%f\n",
          prog_state.bbox);
-  printf("  -?  --help              This message\n");
+  printf("  -g  --group-size <INT>    Size of the local group    default=%d\n",
+         prog_state.group_size);
+  printf("  -t  --dt <FLOAT>          Time step                  default=%f\n",
+         prog_state.dt);
+  printf("  -k  --force-kernel <STR>  Force kernel to use        default=%s\n",
+         prog_state.force_kernel_name);
+  printf("  -?  --help                This message\n");
 }
 
 int main(int argc, char** argv) {
   set_default_state();
+  srandom(time(NULL));
 
   int opt;
   static struct option long_options[] = {
@@ -94,31 +110,50 @@ int main(int argc, char** argv) {
     {"height",   0, 0,  'h'},
     {"nparticles",     0, 0,  'n'},
     {"bbox",      0, 0,  'b'},
+    {"group-size",     0, 0,  'g'},
+    {"dt",       0, 0,  't'},
+    {"force-kernel",  0, 0,   'k'},
     {0 ,0, 0, 0}
   };
 
-    while ((opt = getopt_long(argc, argv, "w:h:n:b:?", long_options, NULL))
-           != EOF) {
-      switch (opt) {
-      case 'w':
-        prog_state.window_width = atoi(optarg);
-        break;
-      case 'h':
-        prog_state.window_height = atoi(optarg);
-        break;
-      case 'n':
-        prog_state.nparticles = atoi(optarg);
-        break;
-      case 'b':
-        prog_state.bbox = atof(optarg);
-        prog_state.translate_z = -2.2f * prog_state.bbox;
-        break;
-      case '?':
-      default:
-        usage(argv[0]);
-        return 1;
-      }
+  while ((opt = getopt_long(argc, argv, "w:h:n:b:g:t:k:?", long_options, NULL))
+         != EOF) {
+    switch (opt) {
+    case 'w':
+      prog_state.window_width = atoi(optarg);
+      break;
+    case 'h':
+      prog_state.window_height = atoi(optarg);
+      break;
+    case 'n':
+      prog_state.nparticles = atoi(optarg);
+      break;
+    case 'b':
+      prog_state.bbox = atof(optarg);
+      prog_state.translate_z = -2.2f * prog_state.bbox;
+      break;
+    case 'g':
+      prog_state.group_size = atoi(optarg);
+      break;
+    case 't':
+      prog_state.dt = atof(optarg);
+      break;
+    case 'k':
+      prog_state.force_kernel_name = optarg;
+      break;
+    case '?':
+    default:
+      usage(argv[0]);
+      return 1;
     }
+  }
+
+  if (prog_state.nparticles % prog_state.group_size != 0) {
+    std::cout
+      << "ERROR: The group size must evenly divide the number of particles."
+      << std::endl;
+    exit(EXIT_FAILURE);
+  }
 
   // Setup our GLUT window and OpenGL related things.
   // Glut callback functions are setup here too.
@@ -130,7 +165,7 @@ int main(int argc, char** argv) {
   // Load and build our CL program from the file.
   //#include "md.cl"  //std::string kernel_source is defined in this file.
   std::string kernel_source = prog_state.md->loadFile("src/md.cl");
-  prog_state.md->loadProgram(kernel_source);
+  prog_state.md->loadProgram(kernel_source, prog_state.group_size);
 
   // Initialize our particle system with positions, velocities and color.
   int num = prog_state.nparticles;
@@ -151,20 +186,22 @@ int main(int argc, char** argv) {
     pos[i] = f4(x, y, z, 1.f);
 
     // Give some initial velocity.
-    //float xr = rand_float(-.1, .1);
-    //float yr = rand_float(1.f, 3.f);
-    // The life is the lifetime of the particle: 1 = alive 0 = dead.
-    // As you will see in part2.cl we reset the particle when it dies.
-    force[i] = f4(0.f, 0.f, 0.f, 0.f);
-    vel[i] = f4(0.f, 0.f, 0.f, 0.f);
+    max /= 10;
+    min /= 10;
+    x = rand_float(min, max);
+    z = rand_float(min, max);
+    y = rand_float(min, max);
+    vel[i] = f4(x, y, z, 0.f);
 
-    // Just make them red and full alpha.
+    force[i] = f4(0.f, 0.f, 0.f, 0.f);
+
+    // Just make them red and full alpha now. The kernel will reassign colors.
     color[i] = f4(1.0f, 0.0f, 0.0f, 1.0f);
   }
 
   prog_state.md->loadData(pos, force, vel, color);
 
-  prog_state.md->clInit(prog_state.bbox);
+  prog_state.md->clInit(prog_state.bbox, prog_state.force_kernel_name);
 
   // This starts the GLUT program, from here on out everything we want
   // to do needs to be done in glut callback functions.
@@ -238,7 +275,10 @@ void init_gl(int argc, char** argv) {
                           prog_state.window_height/2);
 
   std::stringstream ss;
-  ss << "md, " << prog_state.nparticles << " particles" << std::ends;
+  ss << "md:: nparticles: " << prog_state.nparticles << ", box size: "
+     << prog_state.bbox << ", group size: " <<  prog_state.group_size
+     << ", dt: " << prog_state.dt << ", kernel: "
+     << prog_state.force_kernel_name << std::ends;
   prog_state.glutWindowHandle = glutCreateWindow(ss.str().c_str());
 
   glutDisplayFunc(appRender);      // Main rendering function.
@@ -266,14 +306,14 @@ void init_gl(int argc, char** argv) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
-  // glFrustum(-.5, .5, -.5, .5, 0, 40);
   glTranslatef(0.0, 0.0, prog_state.translate_z);
 }
 
 void appDestroy() {
   // This makes sure we properly cleanup our OpenCL context.
   //delete example;
-  if (prog_state.glutWindowHandle) glutDestroyWindow(prog_state.glutWindowHandle);
+  if (prog_state.glutWindowHandle)
+    glutDestroyWindow(prog_state.glutWindowHandle);
   printf("about to exit!\n");
 
   glutLeaveMainLoop();

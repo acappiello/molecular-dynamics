@@ -46,12 +46,12 @@ public:
 
   std::string loadFile(const char *filename);
   // Load an OpenCL program from a string.
-  void loadProgram(std::string kernel_source);
+  void loadProgram(std::string kernel_source, int group_size_val);
   void loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
                 std::vector<cl_float4> vel, std::vector<cl_float4> col);
   // These are implemented in part1.cpp (in the future we will make these more
   // general).
-  void clInit(float bound);
+  void clInit(float bound, char *force_kernel_name);
   // Execute the kernel.
   void runKernel();
 
@@ -66,6 +66,8 @@ private:
   cl::Kernel kernel;
   cl::Kernel forceKernel;
   cl::Kernel updateKernel;
+
+  int group_size;
 
   // Debugging variables.
   cl_int err;
