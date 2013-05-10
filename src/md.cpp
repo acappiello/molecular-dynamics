@@ -5,12 +5,15 @@
 #include <sstream>
 #include <iterator>
 
-#include "md.hpp"
-#include "util.hpp"
-#include "types.hpp"
 
 // Needed for context sharing functions.
 #include <GL/glx.h>
+
+
+// Local includes.
+#include "md.hpp"
+#include "util.hpp"
+#include "types.hpp"
 
 
 MD::MD() {
@@ -28,12 +31,7 @@ MD::MD() {
   int t = devices.front().getInfo<CL_DEVICE_TYPE>();
   printf("type: device: %d CL_DEVICE_TYPE_GPU: %d \n", t, CL_DEVICE_TYPE_GPU);
 
-  // Define OS-specific context properties and create the OpenCL context.
-  // We setup OpenGL context sharing slightly differently on each OS.
-  // This code comes mostly from NVIDIA's SDK examples.
-  // We could also check to see if the device supports GL sharing
-  // but that is just searching through the properties.
-  // An example is avaible in the NVIDIA code.
+  // This part of the setup may be Linux specific.
   cl_context_properties props[] =
     {
       CL_GL_CONTEXT_KHR, (cl_context_properties)glXGetCurrentContext(),
@@ -41,13 +39,12 @@ MD::MD() {
       CL_CONTEXT_PLATFORM, (cl_context_properties)(platforms[0])(),
       0
     };
-  // cl_context cxGPUContext = clCreateContext(props, 1,
-  //            &cdDevices[uiDeviceUsed], NULL, NULL, &err);
   try {
     context = cl::Context(CL_DEVICE_TYPE_GPU, props);
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
+    exit(EXIT_FAILURE);
   }
 
   // Create the command queue we will use to execute OpenCL commands.
@@ -56,11 +53,14 @@ MD::MD() {
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%d)\n", er.what(), er.err());
+    exit(EXIT_FAILURE);
   }
 }
 
+
 MD::~MD()
 {}
+
 
 std::string MD::loadFile(const char *filename) {
   std::ifstream file(filename);
@@ -69,16 +69,16 @@ std::string MD::loadFile(const char *filename) {
   return prog;
 }
 
+
 void MD::loadProgram(std::string kernel_source, int group_size_val) {
   // Program Setup.
   int pl;
   group_size = group_size_val;
-  printf("load the program\n");
+  printf("Load the program.\n");
   bool failed = false;
 
   pl = kernel_source.size();
-  printf("kernel size: %d\n", pl);
-  //printf("kernel: \n %s\n", kernel_source.c_str());
+  printf("Kernel size: %d.\n", pl);
   try {
     cl::Program::Sources source(1,
                                 std::make_pair(kernel_source.c_str(), pl));
@@ -88,19 +88,19 @@ void MD::loadProgram(std::string kernel_source, int group_size_val) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
   }
 
-  printf("build program\n");
+  printf("Building program...\n");
   try {
     //err = program.build(devices, "-cl-nv-verbose -cl-nv-maxrregcount=100");
     std::stringstream build_options;
+    // Define the group size to allow for __local arrays.
     build_options << "-D SIZE=" << group_size << std::ends;
     err = program.build(devices, build_options.str().c_str());
   }
   catch (cl::Error er) {
     printf("program.build: %s\n", oclErrorString(er.err()));
-    //if(err != CL_SUCCESS){
     failed = true;
   }
-  printf("done building program\n");
+  printf("Done building program.\n");
   std::cout << "Build Status: "
             << program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(devices[0])
             << std::endl;
@@ -115,6 +115,7 @@ void MD::loadProgram(std::string kernel_source, int group_size_val) {
     exit(EXIT_FAILURE);
 }
 
+
 void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
                   std::vector<cl_float4> vel, std::vector<cl_float4> col) {
   // Store the number of particles and the size in bytes of our arrays.
@@ -126,17 +127,19 @@ void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
 
   // Make sure OpenGL is finished before we proceed.
   glFinish();
-  printf("gl interop!\n");
-  // Create OpenCL buffer from GL VBO.
-  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, pos_vbo, &err));
-  printf("cl::BufferGL: %s\n", oclErrorString(err));
-  //printf("v_vbo: %s\n", oclErrorString(err));
-  cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, col_vbo, &err));
-  printf("cl::BufferGL: %s\n", oclErrorString(err));
-  // We don't need to push any data here because it's already in the VBO.
+  printf("Set up GL sharing.\n");
+  try {
+    // Create OpenCL buffer from GL VBO.
+    // We don't need to push any data here because it's already in the VBO.
+    cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, pos_vbo, &err));
+    cl_vbos.push_back(cl::BufferGL(context, CL_MEM_READ_WRITE, col_vbo, &err));
+  }
+  catch (cl::Error er) {
+    printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
+    exit(EXIT_FAILURE);
+  }
 
   // Create the OpenCL only arrays.
-  cl_pos_gen = cl::Buffer(context, CL_MEM_WRITE_ONLY, array_size, NULL, &err);
   cl_forces = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
   cl_vel = cl::Buffer(context, CL_MEM_READ_WRITE, array_size, NULL, &err);
 
@@ -148,17 +151,15 @@ void MD::loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
                                  NULL, &event);
   err = queue.enqueueWriteBuffer(cl_vel, CL_TRUE, 0, array_size, &vel[0],
                                  NULL, &event);
-  err = queue.enqueueWriteBuffer(cl_pos_gen, CL_TRUE, 0, array_size, &pos[0],
-                                 NULL, &event);
   queue.finish();
 }
 
-void MD::clInit(float bound, char *force_kernel_name) {
-  printf("Initializing CL Kernels\n");
+
+void MD::clInit(float bound, float dt, std::string force_kernel_name) {
+  printf("Initializing CL Kernels.\n");
   // Initialize our kernel from the program.
   try {
-    //forceKernel = cl::Kernel(program, force_kernel_name, &err);
-    forceKernel = cl::Kernel(program, "force", &err);
+    forceKernel = cl::Kernel(program, force_kernel_name.c_str(), &err);
     updateKernel = cl::Kernel(program, "update", &err);
   }
   catch (cl::Error er) {
@@ -170,21 +171,22 @@ void MD::clInit(float bound, char *force_kernel_name) {
     err = forceKernel.setArg(0, cl_vbos[0]);  // Position vbo.
     err = forceKernel.setArg(1, cl_vbos[1]);  // Color vbo.
     err = forceKernel.setArg(2, cl_forces);
-    err = forceKernel.setArg(3, cl_pos_gen);
-    err = forceKernel.setArg(4, num);          // Pass in the size.
+    err = forceKernel.setArg(3, num);          // Pass in the size.
     err = updateKernel.setArg(0, cl_vbos[0]);  // Position vbo.
     err = updateKernel.setArg(1, cl_vbos[1]);  // Color vbo.
     err = updateKernel.setArg(2, cl_forces);
     err = updateKernel.setArg(3, cl_vel);
     err = updateKernel.setArg(4, bound);
+    updateKernel.setArg(5, dt);                // Pass in the timestep.
   }
   catch (cl::Error er) {
     printf("ERROR: %s(%s)\n", er.what(), oclErrorString(er.err()));
   }
   // Wait for the command queue to finish these commands before proceeding.
   queue.finish();
-  printf("Done initializing\n");
+  printf("Done initializing.\n");
 }
+
 
 void MD::runKernel() {
   // This will update our system by calculating new velocity and updating the
@@ -197,8 +199,6 @@ void MD::runKernel() {
   //printf("acquire: %s\n", oclErrorString(err));
   queue.finish();
 
-  float dt = .001f;
-  updateKernel.setArg(5, dt);  // Pass in the timestep.
   // Execute the kernel.
   try {
     err = queue.enqueueNDRangeKernel(forceKernel, cl::NullRange,

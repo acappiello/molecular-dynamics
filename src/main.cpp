@@ -41,8 +41,9 @@ static struct prog_state {
   float bbox;
   int group_size;
   float dt;
-  char *force_kernel_name;
+  std::string force_kernel_name;
 } prog_state;
+
 
 // Main app helper functions.
 void init_gl(int argc, char** argv);
@@ -53,11 +54,13 @@ void appKeyboard(unsigned char key, int x, int y);
 void appMouse(int button, int state, int x, int y);
 void appMotion(int x, int y);
 
+
 // Quick random function to distribute our initial points.
 float rand_float(float mn, float mx) {
   float r = random() / (float) RAND_MAX;
   return mn + (mx-mn)*r;
 }
+
 
 void set_default_state () {
   prog_state.window_width = 800;
@@ -75,8 +78,9 @@ void set_default_state () {
   prog_state.translate_z = -2.1f * prog_state.bbox;
   prog_state.group_size = 32;
   prog_state.dt = 0.001f;
-  prog_state.force_kernel_name = "force_naive";
+  prog_state.force_kernel_name = std::string("force_naive");
 }
+
 
 void usage(const char* progname) {
   set_default_state();
@@ -95,9 +99,10 @@ void usage(const char* progname) {
   printf("  -t  --dt <FLOAT>          Time step                  default=%f\n",
          prog_state.dt);
   printf("  -k  --force-kernel <STR>  Force kernel to use        default=%s\n",
-         prog_state.force_kernel_name);
+         prog_state.force_kernel_name.c_str());
   printf("  -?  --help                This message\n");
 }
+
 
 int main(int argc, char** argv) {
   set_default_state();
@@ -139,7 +144,7 @@ int main(int argc, char** argv) {
       prog_state.dt = atof(optarg);
       break;
     case 'k':
-      prog_state.force_kernel_name = optarg;
+      prog_state.force_kernel_name = std::string(optarg);
       break;
     case '?':
     default:
@@ -163,21 +168,20 @@ int main(int argc, char** argv) {
   prog_state.md = new MD();
 
   // Load and build our CL program from the file.
-  //#include "md.cl"  //std::string kernel_source is defined in this file.
+  // Presently, this means that you can't run the program from another dir.
   std::string kernel_source = prog_state.md->loadFile("src/md.cl");
   prog_state.md->loadProgram(kernel_source, prog_state.group_size);
 
-  // Initialize our particle system with positions, velocities and color.
+  // Initialize the particle system with positions, velocities and color.
   int num = prog_state.nparticles;
   std::vector<cl_float4> pos(num);
   std::vector<cl_float4> force(num);
   std::vector<cl_float4> vel(num);
   std::vector<cl_float4> color(num);
 
-  // Fill our vectors with initial data.
+  // Fill the vectors with initial data.
   for(int i = 0; i < num; i++) {
-    // Distribute the particles in a random circle around z axis.
-    //float rad = rand_float(.2, .5);
+    // Distribute the particles in a random cube +- bbox in all directions.
     float max = prog_state.bbox;
     float min = -1.f * max;
     float x = rand_float(min, max);
@@ -185,7 +189,7 @@ int main(int argc, char** argv) {
     float y = rand_float(min, max);
     pos[i] = f4(x, y, z, 1.f);
 
-    // Give some initial velocity.
+    // Give some initial velocity. Otherwise, things are boring initially.
     max /= 10;
     min /= 10;
     x = rand_float(min, max);
@@ -199,9 +203,12 @@ int main(int argc, char** argv) {
     color[i] = f4(1.0f, 0.0f, 0.0f, 1.0f);
   }
 
+  // Move this data to the CL device.
   prog_state.md->loadData(pos, force, vel, color);
 
-  prog_state.md->clInit(prog_state.bbox, prog_state.force_kernel_name);
+  // Set up the kernel functions.
+  prog_state.md->clInit(prog_state.bbox, prog_state.dt,
+                        prog_state.force_kernel_name);
 
   // This starts the GLUT program, from here on out everything we want
   // to do needs to be done in glut callback functions.
@@ -209,6 +216,7 @@ int main(int argc, char** argv) {
 
   return EXIT_SUCCESS;
 }
+
 
 void appRender() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -231,39 +239,35 @@ void appRender() {
   glEnable(GL_POINT_SMOOTH);
   glPointSize(5.);
 
-  //printf("color buffer\n");
+  // Color buffer.
   glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->col_vbo);
   glColorPointer(4, GL_FLOAT, 0, 0);
 
-  //printf("vertex buffer\n");
+  // Vertex buffer.
   glBindBuffer(GL_ARRAY_BUFFER, prog_state.md->pos_vbo);
   glVertexPointer(4, GL_FLOAT, 0, 0);
 
-  //printf("enable client state\n");
   glEnableClientState(GL_VERTEX_ARRAY);
   glEnableClientState(GL_COLOR_ARRAY);
 
-  // Need to disable these for blender.
   glDisableClientState(GL_NORMAL_ARRAY);
 
-  //printf("draw arrays\n");
   glDrawArrays(GL_POINTS, 0, prog_state.md->num);
 
-  //printf("disable stuff\n");
   glDisableClientState(GL_COLOR_ARRAY);
   glDisableClientState(GL_VERTEX_ARRAY);
 
   // Display framerate.
-  char buf[10];
-  sprintf(buf, "%d", prog_state.framerate);
-  std::string msg = std::string(buf);
-  //glRasterPos2f(-1.3f, 0.9f);
+  std::stringstream fr;
+  fr << prog_state.framerate;
   glRasterPos3f(-prog_state.bbox, prog_state.bbox, prog_state.bbox);
   glColor4f(0.0f, 0.0f, 1.0f, 1.0f);
-  glutBitmapString(GLUT_BITMAP_HELVETICA_18, (const unsigned char*)msg.c_str());
+  glutBitmapString(GLUT_BITMAP_HELVETICA_18,
+                   (const unsigned char*)fr.str().c_str());
 
   glutSwapBuffers();
 }
+
 
 void init_gl(int argc, char** argv) {
   glutInit(&argc, argv);
@@ -274,6 +278,7 @@ void init_gl(int argc, char** argv) {
                           glutGet(GLUT_SCREEN_HEIGHT)/2 -
                           prog_state.window_height/2);
 
+  // Give the window a descriptive title.
   std::stringstream ss;
   ss << "md:: nparticles: " << prog_state.nparticles << ", box size: "
      << prog_state.bbox << ", group size: " <<  prog_state.group_size
@@ -281,8 +286,9 @@ void init_gl(int argc, char** argv) {
      << prog_state.force_kernel_name << std::ends;
   prog_state.glutWindowHandle = glutCreateWindow(ss.str().c_str());
 
+  // Set up callbacks.
   glutDisplayFunc(appRender);      // Main rendering function.
-  glutTimerFunc(30, timerCB, 30);  // Determine a minimum time between frames.
+  glutTimerFunc(15, timerCB, 15);  // Determine a minimum time between frames.
   glutKeyboardFunc(appKeyboard);
   glutMouseFunc(appMouse);
   glutMotionFunc(appMotion);
@@ -309,23 +315,23 @@ void init_gl(int argc, char** argv) {
   glTranslatef(0.0, 0.0, prog_state.translate_z);
 }
 
+
 void appDestroy() {
   // This makes sure we properly cleanup our OpenCL context.
-  //delete example;
   if (prog_state.glutWindowHandle)
     glutDestroyWindow(prog_state.glutWindowHandle);
-  printf("about to exit!\n");
 
   glutLeaveMainLoop();
-  std::cout << "^^" << std::endl;
   exit(EXIT_SUCCESS);
 }
+
 
 void timerCB(int ms) {
   // This makes sure the appRender function is called every ms miliseconds.
   glutTimerFunc(ms, timerCB, ms);
   glutPostRedisplay();
 }
+
 
 void appKeyboard(unsigned char key, int x, int y) {
   // This way we can exit the program cleanly.
@@ -341,6 +347,7 @@ void appKeyboard(unsigned char key, int x, int y) {
   }
 }
 
+
 void appMouse(int button, int state, int x, int y) {
   // Handle mouse interaction for rotating/zooming the view.
   if (state == GLUT_DOWN) {
@@ -352,6 +359,7 @@ void appMouse(int button, int state, int x, int y) {
   prog_state.mouse_old_x = x;
   prog_state.mouse_old_y = y;
 }
+
 
 void appMotion(int x, int y) {
   // Handle the mouse motion for zooming and rotating the view.

@@ -4,44 +4,23 @@
 #define __CL_ENABLE_EXCEPTIONS
 #include "CL/cl.hpp"
 
-// Issue with using cl_float4 from cl_platform.h.
-// http://www.khronos.org/message_boards/viewtopic.php?f=28&t=1848
-// typedef cl_float cl_float4 __attribute__ ((__vector_size__ (16), __may_alias__));
-typedef struct Vec4 {
-  float x,y,z,w;
-  Vec4(){};
-  // Convenience functions.
-  Vec4(float xx, float yy, float zz, float ww):
-    x(xx),
-    y(yy),
-    z(zz),
-    w(ww)
-  {}
-  void set(float xx, float yy, float zz, float ww=1.) {
-    x = xx;
-    y = yy;
-    z = zz;
-    w = ww;
-  }
-} Vec4; // __attribute__((aligned(16)));
 
 class MD {
 public:
-  // These are arrays we will use in this tutorial.
+  // These are arrays used by the GPU.
   std::vector<cl::Memory> cl_vbos;  // 0: position vbo, 1: color vbo.
-  cl::Buffer cl_pos_gen;  // want to have the start points for reseting particles
   cl::Buffer cl_forces;
   cl::Buffer cl_vel;
 
   GLuint pos_vbo;     // Position vbo.
   GLuint col_vbo;     // Colors vbo.
   int num;            // The number of particles.
-  size_t array_size;  // The size of our arrays num * sizeof(Vec4).
+  size_t array_size;  // The size of our arrays num * sizeof(cl_float4).
 
   // Default constructor initializes OpenCL context and automatically chooses
   // platform and device.
   MD();
-  // Default destructor releases OpenCL objects and frees device memory.
+  // Default destructor. Currently does nothing because the program ends.
   ~MD();
 
   std::string loadFile(const char *filename);
@@ -49,9 +28,7 @@ public:
   void loadProgram(std::string kernel_source, int group_size_val);
   void loadData(std::vector<cl_float4> pos, std::vector<cl_float4> force,
                 std::vector<cl_float4> vel, std::vector<cl_float4> col);
-  // These are implemented in part1.cpp (in the future we will make these more
-  // general).
-  void clInit(float bound, char *force_kernel_name);
+  void clInit(float bound, float dt, std::string force_kernel_name);
   // Execute the kernel.
   void runKernel();
 

@@ -60,7 +60,8 @@
 #else
       timespec spec;
       clock_gettime(CLOCK_THREAD_CPUTIME_ID, &spec);
-      return CycleTimer::SysClock(static_cast<float>(spec.tv_sec) * 1e9 + static_cast<float>(spec.tv_nsec));
+      return CycleTimer::SysClock(static_cast<float>(spec.tv_sec) * 1e9 +
+                                  static_cast<float>(spec.tv_nsec));
 #endif
     }
 
@@ -120,7 +121,8 @@
       FILE *fp = fopen("/proc/cpuinfo","r");
       char input[1024];
       if (!fp) {
-         fprintf(stderr, "CycleTimer::resetScale failed: couldn't find /proc/cpuinfo.");
+         fprintf(stderr,
+                 "CycleTimer::resetScale failed: couldn't find /proc/cpuinfo.");
          exit(-1);
       }
       // In case we don't find it, e.g. on the N900

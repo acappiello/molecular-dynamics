@@ -10,6 +10,7 @@
 #include <GL/freeglut_ext.h>
 #include <GL/glext.h>
 
+
 #include <CL/cl.hpp>
 
 
@@ -32,7 +33,6 @@ GLuint createVBO(const void* data, int dataSize, GLenum target, GLenum usage) {
   if (dataSize != bufferSize) {
     glDeleteBuffers(1, &id);
     id = 0;
-    //cout << "[createVBO()] Data size is mismatch with input array\n";
     printf("[createVBO()] Data size is mismatch with input array\n");
   }
   // This was important for working inside blender!

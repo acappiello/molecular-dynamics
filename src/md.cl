@@ -1,5 +1,3 @@
-#define STRINGIFY(A) #A
-#define SIZE 16
 #define ZERO4 ((float4)(0.f, 0.f, 0.f, 0.f))
 
 float4 lj_pot(float4 pos1, float4 pos2, float dist) {
@@ -7,11 +5,10 @@ float4 lj_pot(float4 pos1, float4 pos2, float dist) {
   float sigma = 4.10;
   float epsilon = 1.77;
 
-  //float dist = distance(pos1, pos2);
   if (dist <= 1e-5)
-    return ZERO4;  // Don't count yourself.
+    return ZERO4;   // Don't count yourself.
   if (dist <= 0.1)
-    dist = 0.1;  // Particles can never be on top of each other!
+    dist = 0.1;     // Particles can never be on top of each other!
   float sigr = sigma / dist;
 
   float lj = 4 * epsilon * (pow(sigr, 12) - pow(sigr, 6));
@@ -21,13 +18,12 @@ float4 lj_pot(float4 pos1, float4 pos2, float dist) {
 }
 
 __kernel void force_naive(__global float4* pos, __global float4* color,
-                          __global float4* force, __global float4* pos_gen,
-                          int num) {
+                          __global float4* force, int num) {
   // Get our index in the array.
   size_t idx = get_global_id(0);
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
-  float4 f = (float4)(0.f, 0.f, 0.f, 0.f);
+  float4 f = ZERO4;
   float cutoff = 10.f;
 
   for (int i = 0; i < num; i++) {
@@ -38,9 +34,8 @@ __kernel void force_naive(__global float4* pos, __global float4* color,
   force[idx] = f;
 }
 
-__kernel void force(__global float4* pos, __global float4* color,
-                    __global float4* force, __global float4* pos_gen,
-                    int num) {
+__kernel void force_tile(__global float4* pos, __global float4* color,
+                         __global float4* force, int num) {
   // Get our index in the array.
   size_t ix = get_group_id(0);
   size_t lx = get_local_id(0);
@@ -56,7 +51,6 @@ __kernel void force(__global float4* pos, __global float4* color,
   int tile = 0;
   for (int i = 0; i < num; i+=SIZE) {
     int id = tile * l_dim + lx;
-    return;
     workspace[lx] = pos[id];
     barrier(CLK_LOCAL_MEM_FENCE);
     for (int j = 0; j < l_dim; j++) {
@@ -69,13 +63,12 @@ __kernel void force(__global float4* pos, __global float4* color,
   force[idx] = f;
 }
 
-//std::string kernel_source = STRINGIFY(
 __kernel void update(__global float4* pos, __global float4* color,
                      __global float4* force, __global float4* vel,
                      float bound, float dt) {
   // Get our index in the array.
   size_t i = get_global_id(0);
-  // Copy position and velocity for this iteration to a local variable.
+  // Copy position, velocity, and force for this iteration to a local variable.
   float4 p = pos[i];
   float4 f = force[i];
   float4 a = f / 1.f;  // Let's just call the mass 1.
@@ -98,4 +91,3 @@ __kernel void update(__global float4* pos, __global float4* color,
   color[i] = clamp((p + bound) / (2 * bound), 0.2f, 1.f);
   color[i].w = 1.f;  // Leave alpha alone.
 }
-//);
