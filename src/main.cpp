@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <getopt.h>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <math.h>
 #include <time.h>
+#include <semaphore.h>
 
 
 // OpenGL stuff.
@@ -19,6 +21,9 @@
 #include "md.hpp"
 #include "cycle_timer.hpp"
 #include "util.hpp"
+
+
+#define CHECK(A, B) (assert((A) == (B)))
 
 
 static struct prog_state {
@@ -37,6 +42,7 @@ static struct prog_state {
   double tlast;
   int frames;
   int framerate;
+  int perframe;
   size_t nparticles;
   float bbox;
   int group_size;
@@ -44,12 +50,15 @@ static struct prog_state {
   std::string force_kernel_name;
 } prog_state;
 
+sem_t lock;
+
 
 // Main app helper functions.
 void init_gl(int argc, char** argv);
 void appRender();
 void appDestroy();
 void timerCB(int ms);
+void call_kernel(int ms);
 void appKeyboard(unsigned char key, int x, int y);
 void appMouse(int button, int state, int x, int y);
 
@@ -74,6 +83,7 @@ void set_default_state () {
   prog_state.tlast = 0.f;
   prog_state.frames = 0;
   prog_state.framerate = 0;
+  prog_state.perframe = 0;
   prog_state.nparticles = 1024;
   prog_state.bbox = 50.f;
   prog_state.translate_z = -2.1f * prog_state.bbox;
@@ -211,6 +221,8 @@ int main(int argc, char** argv) {
   prog_state.md->clInit(prog_state.bbox, prog_state.dt,
                         prog_state.force_kernel_name);
 
+  CHECK(sem_init(&lock, 0, 1), 0);
+
   // This starts the GLUT program, from here on out everything we want
   // to do needs to be done in glut callback functions.
   glutMainLoop();
@@ -220,15 +232,17 @@ int main(int argc, char** argv) {
 
 
 void appRender() {
+  sem_wait(&lock);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // This updates the particle system by calling the kernel.
-  prog_state.md->runKernel();
+  //prog_state.md->runKernel();
 
-  prog_state.frames++;
-  double tnow = CycleTimer::currentSeconds() - prog_state.t0;
+  //prog_state.frames++;
+  double tnow = CycleTimer::currentSeconds();// - prog_state.t0;
   if (tnow > prog_state.tlast + 1.f) {
     prog_state.framerate = prog_state.frames;
+    prog_state.perframe = 1000 * (tnow - prog_state.tlast) / prog_state.frames;
     //std::cout << "Frames: " << prog_state.framerate << std::endl;
     prog_state.tlast = tnow;
     prog_state.frames = 0;
@@ -260,13 +274,14 @@ void appRender() {
 
   // Display framerate.
   std::stringstream fr;
-  fr << prog_state.framerate;
+  fr << "FPS: " << prog_state.framerate << ", ms/F: " << prog_state.perframe;
   glRasterPos3f(-prog_state.bbox, prog_state.bbox, prog_state.bbox);
   glColor4f(0.0f, 0.0f, 1.0f, 1.0f);
   glutBitmapString(GLUT_BITMAP_HELVETICA_18,
                    (const unsigned char*)fr.str().c_str());
 
   glutSwapBuffers();
+  sem_post(&lock);
 }
 
 
@@ -289,7 +304,8 @@ void init_gl(int argc, char** argv) {
 
   // Set up callbacks.
   glutDisplayFunc(appRender);      // Main rendering function.
-  glutTimerFunc(15, timerCB, 15);  // Determine a minimum time between frames.
+  glutTimerFunc(50, timerCB, 50);  // Determine a minimum time between frames.
+  glutTimerFunc(1, call_kernel, 1);
   glutKeyboardFunc(appKeyboard);
   glutMouseFunc(appMouse);
   glutMotionFunc(appMotion);
@@ -314,6 +330,15 @@ void init_gl(int argc, char** argv) {
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
   glTranslatef(0.0, 0.0, prog_state.translate_z);
+}
+
+
+void call_kernel(int ms) {
+  sem_wait(&lock);
+  prog_state.md->runKernel();
+  prog_state.frames++;
+  sem_post(&lock);
+  glutTimerFunc(ms, call_kernel, ms);
 }
 
 

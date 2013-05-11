@@ -1,7 +1,7 @@
 #define ZERO4 ((float4)(0.f, 0.f, 0.f, 0.f))
 
 
-float4 lj_pot(float4 pos1, float4 pos2, float dist) {
+float4 lj_force(float4 pos1, float4 pos2, float dist) {
   float4 res;
   float sigma = 4.10;                 // Angstrom.
   float epsilon = 1770 / (6.022e23);  // Joule(/atom).
@@ -31,7 +31,7 @@ __kernel void force_naive(__global float4* pos, __global float4* color,
 
   for (int i = 0; i < num; i++) {
     if (i != idx)
-      f += lj_pot(p, pos[i], distance(p, pos[i]));
+      f += lj_force(p, pos[i], distance(p, pos[i]));
   }
 
   force[idx] = f;
@@ -45,14 +45,14 @@ __kernel void force_naive_clip(__global float4* pos, __global float4* color,
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
   float4 f = ZERO4;
-  float cutoff = 10.f;
+  float cutoff = 10.f;  // Angstrom.
   float dist;
 
   for (int i = 0; i < num; i++) {
     if (i != idx) {
       dist = distance(p, pos[i]);
       if (dist < cutoff)
-        f += lj_pot(p, pos[i], dist);
+        f += lj_force(p, pos[i], dist);
     }
   }
 
@@ -69,7 +69,7 @@ __kernel void force_tile(__global float4* pos, __global float4* color,
   size_t idx = ix * l_dim + lx;
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
-  float4 f = (float4)(0.f, 0.f, 0.f, 0.f);
+  float4 f = ZERO4;
 
   __local float4 workspace[SIZE];
 
@@ -79,7 +79,7 @@ __kernel void force_tile(__global float4* pos, __global float4* color,
     workspace[lx] = pos[id];
     barrier(CLK_LOCAL_MEM_FENCE);
     for (int j = 0; j < l_dim; j++) {
-      f += lj_pot(p, workspace[j], distance(p, workspace[j]));
+      f += lj_force(p, workspace[j], distance(p, workspace[j]));
     }
     barrier(CLK_LOCAL_MEM_FENCE);
     tile++;
@@ -98,8 +98,8 @@ __kernel void force_tile_clip(__global float4* pos, __global float4* color,
   size_t idx = ix * l_dim + lx;
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
-  float4 f = (float4)(0.f, 0.f, 0.f, 0.f);
-  float cutoff = 10.f;
+  float4 f = ZERO4;
+  float cutoff = 10.f;  // Angstrom.
   float dist;
 
   __local float4 workspace[SIZE];
@@ -112,7 +112,7 @@ __kernel void force_tile_clip(__global float4* pos, __global float4* color,
     for (int j = 0; j < l_dim; j++) {
       dist = distance(p, workspace[j]);
       if (dist < cutoff)
-        f += lj_pot(p, workspace[j], dist);
+        f += lj_force(p, workspace[j], dist);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
     tile++;
@@ -135,6 +135,7 @@ __kernel void update(__global float4* pos, __global float4* color,
   v += a * dt;
   p += v * dt * 1e10;
 
+  // Handle collisions with walls.
   float elasticity = 0.5;
   if (p.x >= bound || p.x <= -bound)
     v.x = -elasticity * v.x;
@@ -143,10 +144,14 @@ __kernel void update(__global float4* pos, __global float4* color,
   if (p.z >= bound || p.z <= -bound)
     v.z = -elasticity * v.z;
 
+  // Stay inside the box!
   p = clamp(p, -bound, bound);
+
+  // Write back to global memory.
   pos[i] = p;
   vel[i] = v;
 
+  // Update color to reflect position.
   color[i] = clamp((p + bound) / (2 * bound), 0.2f, 1.f);
   color[i].w = 1.f;  // Leave alpha alone.
 }

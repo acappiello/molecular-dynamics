@@ -18,7 +18,7 @@ INCL       := ./opencl11
 
 INCLUDES   := $(addprefix -I, $(INCL))
 
-LIBS       := GL glut OpenCL GLU GLEW
+LIBS       := GL glut OpenCL GLU GLEW pthread
 LDFLAGS    :=
 
 LDLIBS     := $(addprefix -l, $(LIBS))
@@ -35,7 +35,7 @@ dirs:
 	mkdir -p $(OBJDIR)/
 
 clean:
-	rm -rf $(OBJDIR) *~ $(EXECUTABLE)
+	rm -rf $(OBJDIR) *~ src/*~ $(EXECUTABLE)
 
 $(EXECUTABLE): dirs $(OBJS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $(OBJS) $(LDFLAGS) $(LDLIBS)
