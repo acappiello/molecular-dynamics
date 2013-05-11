@@ -1,5 +1,6 @@
 #define ZERO4 ((float4)(0.f, 0.f, 0.f, 0.f))
 
+
 float4 lj_pot(float4 pos1, float4 pos2, float dist) {
   float4 res;
   float sigma = 4.10;
@@ -17,6 +18,7 @@ float4 lj_pot(float4 pos1, float4 pos2, float dist) {
   return res;
 }
 
+
 __kernel void force_naive(__global float4* pos, __global float4* color,
                           __global float4* force, int num) {
   // Get our index in the array.
@@ -24,7 +26,6 @@ __kernel void force_naive(__global float4* pos, __global float4* color,
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
   float4 f = ZERO4;
-  float cutoff = 10.f;
 
   for (int i = 0; i < num; i++) {
     if (i != idx)
@@ -33,6 +34,29 @@ __kernel void force_naive(__global float4* pos, __global float4* color,
 
   force[idx] = f;
 }
+
+
+__kernel void force_naive_clip(__global float4* pos, __global float4* color,
+                               __global float4* force, int num) {
+  // Get our index in the array.
+  size_t idx = get_global_id(0);
+  // Copy position for this iteration to a local variable.
+  float4 p = pos[idx];
+  float4 f = ZERO4;
+  float cutoff = 10.f;
+  float dist;
+
+  for (int i = 0; i < num; i++) {
+    if (i != idx) {
+      dist = distance(p, pos[i]);
+      if (dist < cutoff)
+        f += lj_pot(p, pos[i], dist);
+    }
+  }
+
+  force[idx] = f;
+}
+
 
 __kernel void force_tile(__global float4* pos, __global float4* color,
                          __global float4* force, int num) {
@@ -44,7 +68,6 @@ __kernel void force_tile(__global float4* pos, __global float4* color,
   // Copy position for this iteration to a local variable.
   float4 p = pos[idx];
   float4 f = (float4)(0.f, 0.f, 0.f, 0.f);
-  float cutoff = 10.f;
 
   __local float4 workspace[SIZE];
 
@@ -62,6 +85,40 @@ __kernel void force_tile(__global float4* pos, __global float4* color,
 
   force[idx] = f;
 }
+
+
+__kernel void force_tile_clip(__global float4* pos, __global float4* color,
+                         __global float4* force, int num) {
+  // Get our index in the array.
+  size_t ix = get_group_id(0);
+  size_t lx = get_local_id(0);
+  size_t l_dim = get_local_size(0);
+  size_t idx = ix * l_dim + lx;
+  // Copy position for this iteration to a local variable.
+  float4 p = pos[idx];
+  float4 f = (float4)(0.f, 0.f, 0.f, 0.f);
+  float cutoff = 10.f;
+  float dist;
+
+  __local float4 workspace[SIZE];
+
+  int tile = 0;
+  for (int i = 0; i < num; i+=SIZE) {
+    int id = tile * l_dim + lx;
+    workspace[lx] = pos[id];
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int j = 0; j < l_dim; j++) {
+      dist = distance(p, workspace[j]);
+      if (dist < cutoff)
+        f += lj_pot(p, workspace[j], dist);
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+    tile++;
+  }
+
+  force[idx] = f;
+}
+
 
 __kernel void update(__global float4* pos, __global float4* color,
                      __global float4* force, __global float4* vel,

@@ -52,6 +52,7 @@ void appDestroy();
 void timerCB(int ms);
 void appKeyboard(unsigned char key, int x, int y);
 void appMouse(int button, int state, int x, int y);
+
 void appMotion(int x, int y);
 
 
