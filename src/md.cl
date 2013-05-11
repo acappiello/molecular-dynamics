@@ -3,8 +3,8 @@
 
 float4 lj_pot(float4 pos1, float4 pos2, float dist) {
   float4 res;
-  float sigma = 4.10;
-  float epsilon = 1.77;
+  float sigma = 4.10;                 // Angstrom.
+  float epsilon = 1770 / (6.022e23);  // Joule(/atom).
 
   if (dist <= 1e-5)
     return ZERO4;   // Don't count yourself.
@@ -12,9 +12,11 @@ float4 lj_pot(float4 pos1, float4 pos2, float dist) {
     dist = 0.1;     // Particles can never be on top of each other!
   float sigr = sigma / dist;
 
-  float lj = 4 * epsilon * (pow(sigr, 12) - pow(sigr, 6));
+  float lj = 24 * epsilon *
+    (2 * pow(sigr, 12) / (dist * 1e-10) -
+     pow(sigr, 6) / (dist * 1e-10));  // Newton.
 
-  res = lj * (pos1 - pos2);
+  res = lj * ((pos1 - pos2) / dist);  // Newton.
   return res;
 }
 
@@ -126,12 +128,12 @@ __kernel void update(__global float4* pos, __global float4* color,
   // Get our index in the array.
   size_t i = get_global_id(0);
   // Copy position, velocity, and force for this iteration to a local variable.
-  float4 p = pos[i];
-  float4 f = force[i];
-  float4 a = f / 1.f;  // Let's just call the mass 1.
-  float4 v = vel[i];
+  float4 p = pos[i];             // Angstrom.
+  float4 f = force[i];           // Newton = Kilogram * Meter/Second^2.
+  float4 a = f / (2.18017e-25);  // Meter/Second^2.
+  float4 v = vel[i];             // Meter/S.
   v += a * dt;
-  p += v * dt;
+  p += v * dt * 1e10;
 
   float elasticity = 0.5;
   if (p.x >= bound || p.x <= -bound)

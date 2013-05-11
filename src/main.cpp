@@ -78,7 +78,7 @@ void set_default_state () {
   prog_state.bbox = 50.f;
   prog_state.translate_z = -2.1f * prog_state.bbox;
   prog_state.group_size = 32;
-  prog_state.dt = 0.001f;
+  prog_state.dt = 1e-15;
   prog_state.force_kernel_name = std::string("force_naive");
 }
 
@@ -97,7 +97,7 @@ void usage(const char* progname) {
          prog_state.bbox);
   printf("  -g  --group-size <INT>    Size of the local group    default=%d\n",
          prog_state.group_size);
-  printf("  -t  --dt <FLOAT>          Time step                  default=%f\n",
+  printf("  -t  --dt <FLOAT>          Time step                  default=%e\n",
          prog_state.dt);
   printf("  -k  --force-kernel <STR>  Force kernel to use        default=%s\n",
          prog_state.force_kernel_name.c_str());
