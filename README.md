@@ -36,3 +36,8 @@ Program Options:
   -k  --force-kernel <STR>  Force kernel to use        default=force_naive
   -?  --help                This message
 ```
+
+Credits
+-------
+
+The following was an extremely helpful starting point for this project: http://enja.org/2010/08/27/adventures-in-opencl-part-2-particles-with-opengl/.
