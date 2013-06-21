@@ -9,7 +9,7 @@ for i = 1:length(nparticle)
     hold on;
     title([int2str(nparticle(i)) ' Particles, ' int2str(bbox(i)) ' box']);
     xlabel('Group Size');
-    ylabel('FPS');
+    ylabel('ms/update');
     plot(group, fn(i,:), '--ob', 'MarkerEdgeColor', 'black', ...
         'MarkerFaceColor', 'b');
     plot(group, fnc(i,:), '--og', 'MarkerEdgeColor', 'black', ...
